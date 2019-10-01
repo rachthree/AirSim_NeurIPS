@@ -1,3 +1,7 @@
 AirSim
 .idea
 source
+airsim_gd.egg-info
+__pycache__
+dist
+build
