@@ -5,6 +5,7 @@ import threading
 import time
 import racer_utils
 import numpy as np
+import pandas as pd
 
 # drone_name should match the name in ~/Document/AirSim/settings.json
 class BaselineRacer(object):
@@ -252,24 +253,37 @@ class BaselineRacer(object):
             self.odometry_callback_thread.join()
             print("Stopped odometry callback thread.")
 
-def main(args):
+    def set_segment_ids(self, spreadsheet_loc, level_name):
+        df = pd.read_excel(spreadsheet_loc, sheet_name=level_name)
+        for obj, seg_id in zip(df['object'], df['segment_ID']):
+            self.airsim_client.simSetSegmentationObjectID(obj, seg_id)
+
+
+def main(level_name="Soccer_Field_Medium", planning_baseline_type="all_gates_at_once",
+         planning_and_control_api="moveOnSpline", enable_plot_transform=False, enable_viz_traj=False,
+         enable_viz_image_cv2=False, race_tier=3,
+         spreadsheet_loc="levels_objects.xlsx"):
     # ensure you have generated the neurips planning settings file by running python generate_settings_file.py
-    baseline_racer = BaselineRacer(drone_name="drone_1", plot_transform=args.plot_transform, viz_traj=args.viz_traj, viz_image_cv2=args.viz_image_cv2)
-    baseline_racer.load_level(args.level_name)
-    baseline_racer.start_race(args.race_tier)
+    baseline_racer = BaselineRacer(drone_name="drone_1", plot_transform=enable_plot_transform, viz_traj=enable_viz_traj, viz_image_cv2=enable_viz_image_cv2)
+    baseline_racer.load_level(level_name)
+
+    # Load Segment ID's
+    baseline_racer.set_segment_ids(spreadsheet_loc, level_name)
+
+    baseline_racer.start_race(race_tier)
     baseline_racer.initialize_drone()
     baseline_racer.takeoff_with_moveOnSpline()
     baseline_racer.get_ground_truth_gate_poses()
     baseline_racer.start_image_callback_thread()
     baseline_racer.start_odometry_callback_thread()
 
-    if args.planning_baseline_type == "all_gates_at_once" :
-        if args.planning_and_control_api == "moveOnSpline":
+    if planning_baseline_type == "all_gates_at_once" :
+        if planning_and_control_api == "moveOnSpline":
             baseline_racer.fly_through_all_gates_at_once_with_moveOnSpline().join()
         if args.planning_and_control_api == "moveOnSplineVelConstraints":
             baseline_racer.fly_through_all_gates_at_once_with_moveOnSplineVelConstraints().join()
 
-    if args.planning_baseline_type == "all_gates_one_by_one":
+    if planning_baseline_type == "all_gates_one_by_one":
         if args.planning_and_control_api == "moveOnSpline":
             baseline_racer.fly_through_all_gates_one_by_one_with_moveOnSpline().join()
         if args.planning_and_control_api == "moveOnSplineVelConstraints":
@@ -281,7 +295,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument('--level_name', type=str, choices=["Soccer_Field_Easy", "Soccer_Field_Medium", "ZhangJiaJie_Medium", "Building99_Hard"], default="ZhangJiaJie_Medium")
+    parser.add_argument('--level_name', type=str, choices=["Soccer_Field_Easy", "Soccer_Field_Medium", "ZhangJiaJie_Medium", "Building99_Hard"], default="Soccer_Field_Medium")
     parser.add_argument('--planning_baseline_type', type=str, choices=["all_gates_at_once","all_gates_one_by_one"], default="all_gates_at_once")
     parser.add_argument('--planning_and_control_api', type=str, choices=["moveOnSpline", "moveOnSplineVelConstraints"], default="moveOnSpline")
     parser.add_argument('--enable_plot_transform', dest='plot_transform', action='store_true', default=False)
@@ -289,4 +303,5 @@ if __name__ == "__main__":
     parser.add_argument('--enable_viz_image_cv2', dest='viz_image_cv2', action='store_true', default=False)
     parser.add_argument('--race_tier', type=int, choices=[1,2,3], default=3)
     args = parser.parse_args()
-    main(args)
+    main(args.level_name, args.planning_baseline_type, args.planning_and_control_api, args.plot_transform,
+         args.viz_traj, args.viz_image_cv2, args.race_tier)
