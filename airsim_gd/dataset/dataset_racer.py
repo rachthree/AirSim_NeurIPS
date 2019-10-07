@@ -68,12 +68,13 @@ class BaselineRacer(object):
         self.airsim_client.takeoffAsync().join()
 
     # like takeoffAsync(), but with moveOnSpline()
-    def takeoff_with_moveOnSpline(self, takeoff_height = 0.1):
-        if self.level_name == "ZhangJiaJie_Medium":
-            takeoff_height = 0.3
+    def takeoff_with_moveOnSpline(self, takeoff_height=1.0):
+        # default was 0.1
+        # if self.level_name == "ZhangJiaJie_Medium":
+        #     takeoff_height = 0.3
 
         start_position = self.airsim_client.simGetVehiclePose(vehicle_name=self.drone_name).position
-        takeoff_waypoint = airsim.Vector3r(start_position.x_val, start_position.y_val, -takeoff_height)
+        takeoff_waypoint = airsim.Vector3r(start_position.x_val, start_position.y_val, start_position.z_val-takeoff_height)
 
         if(self.plot_transform):
             self.airsim_client.plot_transform([airsim.Pose(takeoff_waypoint, airsim.Quaternionr())], vehicle_name=self.drone_name)
@@ -261,7 +262,7 @@ class BaselineRacer(object):
 
 def main(level_name="Soccer_Field_Medium", planning_baseline_type="all_gates_at_once",
          planning_and_control_api="moveOnSpline", enable_plot_transform=False, enable_viz_traj=False,
-         enable_viz_image_cv2=False, race_tier=3,
+         enable_viz_image_cv2=False, race_tier=1,
          spreadsheet_loc="levels_objects.xlsx"):
     # ensure you have generated the neurips planning settings file by running python generate_settings_file.py
     baseline_racer = BaselineRacer(drone_name="drone_1", plot_transform=enable_plot_transform, viz_traj=enable_viz_traj, viz_image_cv2=enable_viz_image_cv2)
