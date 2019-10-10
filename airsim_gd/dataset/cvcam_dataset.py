@@ -33,7 +33,30 @@ class CVCameraDataset(object):
         for obj, seg_id in zip(df['object'], df['segment_ID']):
             self.client.simSetSegmentationObjectID(obj, seg_id)
 
-    def record_data(self):
+    def record_path(self):
+        # Record camera path
+        # Save position and quaternion
+        # Eliminate duplicates
+        # While loop, but ctrl-c out gracefully
+        # get rid of duplicates at end
+        # write out json
+        # save attribute
+        pass
+
+    def generate_data(self, vehicle_name="drone_1", path_json=None, fly_region_start_id=101, gate_start_id=1, gate_lim=10):
+        # load json or use attribute
+        # At each position, place camera/drone
+        # Take images from fpv_cam, back, starboard, port, bottom
+        # RGB, Segmentation, Depth
+        # Random rotation among 4 quadrants of drone POV... need to do transformations!
+        # Determine flyable region without occlusion... need projection!
+        # Determine which part of the flyable region can actually be seen using the segment ID's... occlusion!
+        # Define areas to fill with flyable regions
+        # Determine closest gates given segment ID's -> gate number -> gate location in sim.
+        # New segment ID in increasing distance.
+        # New alpha channel in PNG.
+        # Save depths as PFM
+
         pass
 
 def main(sid_path, level_name, save_dir, cam_mode):
