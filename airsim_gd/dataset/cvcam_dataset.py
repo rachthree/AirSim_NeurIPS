@@ -30,7 +30,8 @@ class CVCameraDataset(object):
     def __init__(self, sid_spreadsheet_loc=Path("airsim_gd/dataset/levels_objects.xlsx"),
                  save_dir=Path.cwd().parent.joinpath("data"),
                  cam_mode="single",
-                 sess_name=time.ctime(time.time()).replace(':', '.')):
+                 sess_name=time.ctime(time.time()).replace(':', '.'),
+                 cameras=["fpv_cam", "aft", "starboard", "port", "bottom"]):
         self.client = setupASClient()
         self.sid_spreadsheet_loc = Path(sid_spreadsheet_loc)
         self.save_dir = Path(save_dir)
@@ -38,6 +39,7 @@ class CVCameraDataset(object):
         self.pose_history_df = None
         self.sess_name = sess_name
         self.level_name = ""
+        self.cameras = cameras
 
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -80,6 +82,34 @@ class CVCameraDataset(object):
             history_df.to_csv(csv_savepath, sep='\t', encoding='utf-8', index=False)
             print(f"Saved positional time history to {csv_savepath}.")
 
+    def take_images_dataset(self):
+        # get uncompressed fpv cam image
+        # Scene = 0,
+        # DepthPlanner = 1,
+        # DepthPerspective = 2,
+        # DepthVis = 3,
+        # DisparityNormalized = 4,
+        # Segmentation = 5,
+        # SurfaceNormals = 6,
+        # Infrared = 7
+        for camera in self.cameras:
+            responses = self.client.simGetImages([
+                # uncompressed RGBA array bytes
+                airsim.ImageRequest(camera, airsim.ImageType.Scene, pixels_as_float=False, compress=False),
+                # floating point uncompressed image
+                airsim.ImageRequest(camera, airsim.ImageType.Segmentation, pixels_as_float=False, compress=False),
+                # Depth
+                airsim.ImageRequest(camera, airsim.ImageType.DepthVis, pixels_as_float=True, compress=False)
+            ])
+            rgb_response = responses[0]
+            img_rgb_1d = np.frombuffer(rgb_response.image_data_uint8, dtype=np.uint8)
+            img_rgb = img_rgb_1d.reshape(rgb_response.height, rgb_response.width, 3)
+
+            seg_response = responses[1]
+            seg_1d = np.frombuffer(seg_response.image_data_uint8, dtype=np.uint8)
+            img_seg = seg_1d.reshape(seg_response.height, seg_response.width, 3)
+
+
     def generate_data(self, vehicle_name="drone_1", csv_path=None, fly_region_start_id=101, gate_start_id=1, gate_lim=10):
         # load json or use attribute
         if csv_path is None:
@@ -104,11 +134,15 @@ class CVCameraDataset(object):
             # RGB, Segmentation, Depth
 
 
+
             # place drone 2 randomly
 
             # Take images again
 
             # Random rotation among 4 quadrants of drone POV... need to do transformations!
+            # use airsim.utils.to_eularian_angles(pose.orientation), adjust, use airsim.utils.to_quaternion(roll, pitch, yaw)
+            # place drone 2 randomly?
+
             # Determine flyable region without occlusion... need projection!
             # Determine which part of the flyable region can actually be seen using the segment ID's... occlusion!
             # Define areas to fill with flyable regions
