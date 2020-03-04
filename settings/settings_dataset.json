@@ -1,0 +1,199 @@
+{
+  "ClockSpeed": 1,
+  "SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/master/docs/settings.md",
+  "SettingsVersion": 1.2,
+  "SimMode": "ComputerVision",
+  "SegmentationSettings":{
+	"InitMethod": "None",
+	"MeshNamingMethod": "",
+	"OverrideExisting": false
+	},
+  "SubWindows": [
+    {"WindowID": 0, "ImageType": 5, "CameraName": "fpv_cam", "Visible": true},
+    {"WindowID": 1, "ImageType": 5, "CameraName": "starboard", "Visible": true},
+    {"WindowID": 2, "ImageType": 5, "CameraName": "port", "Visible": true}
+  ],
+  "Recording": {
+    "RecordOnMove": true,
+    "RecordInterval": 0.05,
+    "Cameras": [
+      { "CameraName": "fpv_cam", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "fpv_cam", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "fpv_cam", "ImageType": 3, "PixelsAsFloat": true, "Compress": true },
+      { "CameraName": "bottom", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "bottom", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "bottom", "ImageType": 3, "PixelsAsFloat": true, "Compress": true },
+      { "CameraName": "aft", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "aft", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "aft", "ImageType": 3, "PixelsAsFloat": true, "Compress": true },
+      { "CameraName": "starboard", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "starboard", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "starboard", "ImageType": 3, "PixelsAsFloat": true, "Compress": true },
+      { "CameraName": "port", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "port", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
+      { "CameraName": "port", "ImageType": 3, "PixelsAsFloat": true, "Compress": true }
+    ]
+    },
+  "Vehicles": {
+    "drone_1": {
+      "Cameras": {
+        "fpv_cam": {
+          "CaptureSettings": [
+            {
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 0,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 5,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 3,
+              "Width": 320
+            }
+          ],
+          "Pitch": 0.0,
+          "Roll": 0.0,
+          "X": 0.25,
+          "Y": 0.0,
+          "Yaw": 0.0,
+          "Z": 0.0
+        },
+        "bottom": {
+          "CaptureSettings": [
+            {
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 0,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 5,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 3,
+              "Width": 320
+            }
+          ],
+          "Pitch": -90.0,
+          "Roll": 0.0,
+          "X": 0.0,
+          "Y": 0.0,
+          "Yaw": 0.0,
+          "Z": 0.25
+        },
+        "aft": {
+          "CaptureSettings": [
+            {
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 0,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 5,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 3,
+              "Width": 320
+            }
+          ],
+          "Pitch": 0.0,
+          "Roll": 0.0,
+          "X": -0.25,
+          "Y": 0.0,
+          "Yaw": 180.0,
+          "Z": 0.0
+        },
+        "starboard": {
+          "CaptureSettings": [
+            {
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 0,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 5,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 3,
+              "Width": 320
+            }
+          ],
+          "Pitch": 0.0,
+          "Roll": 0.0,
+          "X": -0.25,
+          "Y": 0.0,
+          "Yaw": 90.0,
+          "Z": 0.0
+        },
+        "port": {
+          "CaptureSettings": [
+            {
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 0,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 5,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 3,
+              "Width": 320
+            }
+          ],
+          "Pitch": 0.0,
+          "Roll": 0.0,
+          "X": -0.25,
+          "Y": 0.0,
+          "Yaw": -90.0,
+          "Z": 0.0
+        }
+      },
+      "Pitch": 0.0,
+      "Roll": 0.0,
+      "VehicleType": "ComputerVision",
+      "X": 0.0,
+      "Y": 0.0,
+      "Yaw": 0.0,
+      "Z": 0.0
+    },
+    "drone_2": {
+      "Pitch": 0.0,
+      "Roll": 0.0,
+      "VehicleType": "SimpleFlight",
+      "X": 0.0,
+      "Y": 1.0,
+      "Yaw": 0.0,
+      "Z": 0
+    }
+  }
+}

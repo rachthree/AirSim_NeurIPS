@@ -1,5 +1,6 @@
 import os
 import time
+import json
 from copy import deepcopy
 from pathlib import Path
 import csv
@@ -26,12 +27,16 @@ def pose_to_array(pose):
                   pose.orientation.w_val, pose.orientation.x_val, pose.orientation.y_val, pose.orientation.z_val]
     return pose_array
 
+def pix_to_id(pix_array, rgb2id_dict):
+    return rgb2id_dict[pix_array[0]][pix_array[1]][pix_array[2]]
+
 class CVCameraDataset(object):
     def __init__(self, sid_spreadsheet_loc=Path("airsim_gd/dataset/levels_objects.xlsx"),
                  save_dir=Path.cwd().parent.joinpath("data"),
                  cam_mode="single",
                  sess_name=time.ctime(time.time()).replace(':', '.'),
-                 cameras=["fpv_cam", "aft", "starboard", "port", "bottom"]):
+                 cameras=["fpv_cam", "aft", "starboard", "port", "bottom"],
+                 segmentation_id_path=Path("airsim_gd/dataset/segmentation_id_maps.json")):
         self.client = setupASClient()
         self.sid_spreadsheet_loc = Path(sid_spreadsheet_loc)
         self.save_dir = Path(save_dir)
@@ -41,7 +46,12 @@ class CVCameraDataset(object):
         self.level_name = ""
         self.cameras = cameras
 
+        segID_maps = json.load(segmentation_id_path)
+        self.id2rgb = segID_maps["id2rgb"]
+        self.rgb2id = segID_maps["rgb2id"]
+
         self.save_dir.mkdir(parents=True, exist_ok=True)
+
 
     def load_level(self, level_name):
         if level_name not in level_list:
@@ -92,6 +102,12 @@ class CVCameraDataset(object):
         # Segmentation = 5,
         # SurfaceNormals = 6,
         # Infrared = 7
+        img_rgb_cam = {}
+        img_seg_cam = {}
+        img_seg_id_cam = {}
+        img_depth_cam = {}
+        results = {}
+
         for camera in self.cameras:
             responses = self.client.simGetImages([
                 # uncompressed RGBA array bytes
@@ -104,10 +120,26 @@ class CVCameraDataset(object):
             rgb_response = responses[0]
             img_rgb_1d = np.frombuffer(rgb_response.image_data_uint8, dtype=np.uint8)
             img_rgb = img_rgb_1d.reshape(rgb_response.height, rgb_response.width, 3)
+            img_rgb_cam[camera] = img_rgb
 
             seg_response = responses[1]
             seg_1d = np.frombuffer(seg_response.image_data_uint8, dtype=np.uint8)
             img_seg = seg_1d.reshape(seg_response.height, seg_response.width, 3)
+            img_seg_ID = np.apply_along_axis(pix_to_id, 2, img_seg, self.rgb2id)
+            img_seg_cam[camera] = img_seg
+            img_seg_id_cam[camera] = img_seg_ID
+
+            depth_response = responses[2]
+            depth_1d = np.frombuffer(depth_response.image_data_uint8, dtype=np.uint8)
+            img_depth = depth_1d.reshape(depth_response.height, depth_response.width, 3)
+            img_depth_cam[camera] = img_depth
+
+        results["rgb"] = img_rgb_cam
+        results["seg"] = img_seg_cam
+        results["segID"] = img_seg_ID
+        results["depth"] = img_depth_cam
+
+        return results
 
 
     def generate_data(self, vehicle_name="drone_1", csv_path=None, fly_region_start_id=101, gate_start_id=1, gate_lim=10):
@@ -132,16 +164,19 @@ class CVCameraDataset(object):
             self.client.simSetVehiclePose(pose, ignore_collision=True, vehicle_name=vehicle_name)
             # Take images from fpv_cam, back, starboard, port, bottom
             # RGB, Segmentation, Depth
+            images = self.take_images_dataset()
 
+            # 10 gate algo
+            # TODO: place drone 2 randomly and take images again
 
-
-            # place drone 2 randomly
-
-            # Take images again
-
-            # Random rotation among 4 quadrants of drone POV... need to do transformations!
+            # Random rotation among 4 quadrants of drone POV...
             # use airsim.utils.to_eularian_angles(pose.orientation), adjust, use airsim.utils.to_quaternion(roll, pitch, yaw)
-            # place drone 2 randomly?
+            euler_ang0 = airsim.utils.to_eularian_angles(pose.orientation)
+
+
+            # Randomize gate sizes?
+
+            # TODO: place drone 2 randomly and take images again
 
             # Determine flyable region without occlusion... need projection!
             # Determine which part of the flyable region can actually be seen using the segment ID's... occlusion!
