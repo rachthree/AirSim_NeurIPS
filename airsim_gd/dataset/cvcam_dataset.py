@@ -14,21 +14,23 @@ import airsimneurips as airsim
 from airsim_gd.vision.utils import setupASClient
 from airsim_gd.dataset.utils import imagery
 
+
 level_list = ["Soccer_Field_Easy", "Soccer_Field_Medium", "ZhangJiaJie_Medium", "Building99_Hard"]
 
 
 def pose_to_dict(pose, t=0.0):
-    pose_dict = {"t": t, "x": pose.position.x_val, "y": pose.position.y_val, "z": pose.position.z_val,
-                 "qw": pose.orientation.w_val, "qx": pose.orientation.x_val, "qy": pose.orientation.y_val, "qz": pose.orientation.z_val}
-    return pose_dict
+    return {"t": t, "x": pose.position.x_val, "y": pose.position.y_val, "z": pose.position.z_val,
+            "qw": pose.orientation.w_val, "qx": pose.orientation.x_val, "qy": pose.orientation.y_val, "qz": pose.orientation.z_val}
+
 
 def pose_to_array(pose):
-    pose_array = [pose.position.x_val, pose.position.y_val, pose.position.z_val,
-                  pose.orientation.w_val, pose.orientation.x_val, pose.orientation.y_val, pose.orientation.z_val]
-    return pose_array
+    return [pose.position.x_val, pose.position.y_val, pose.position.z_val,
+            pose.orientation.w_val, pose.orientation.x_val, pose.orientation.y_val, pose.orientation.z_val]
+
 
 def pix_to_id(pix_array, rgb2id_dict):
     return rgb2id_dict[pix_array[0]][pix_array[1]][pix_array[2]]
+
 
 class CVCameraDataset(object):
     def __init__(self, sid_spreadsheet_loc=Path("airsim_gd/dataset/levels_objects.xlsx"),
@@ -52,18 +54,19 @@ class CVCameraDataset(object):
 
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
-
     def load_level(self, level_name):
         if level_name not in level_list:
             raise ValueError("Invalid level. Choose one from {}".format(level_list))
 
         self.client.simLoadLevel(level_name)
         self.level_name = level_name
+        self.id_dict = {}
 
         # load segment ID's
         df = pd.read_excel(self.sid_spreadsheet_loc, sheet_name=level_name)
         for obj, seg_id in zip(df['object'], df['segment_ID']):
             self.client.simSetSegmentationObjectID(obj, seg_id)
+            self.id_dict[seg_id] = obj
 
     def record_path(self, vehicle_name="drone_1", interval=0.05):
         t_start = time.clock()
@@ -106,9 +109,11 @@ class CVCameraDataset(object):
         img_seg_cam = {}
         img_seg_id_cam = {}
         img_depth_cam = {}
-        results = {}
+        images_dict = {}
 
         for camera in self.cameras:
+            # Take images from fpv_cam, back, starboard, port, bottom
+            # RGB, Segmentation, Depth
             responses = self.client.simGetImages([
                 # uncompressed RGBA array bytes
                 airsim.ImageRequest(camera, airsim.ImageType.Scene, pixels_as_float=False, compress=False),
@@ -117,6 +122,7 @@ class CVCameraDataset(object):
                 # Depth
                 airsim.ImageRequest(camera, airsim.ImageType.DepthVis, pixels_as_float=True, compress=False)
             ])
+
             rgb_response = responses[0]
             img_rgb_1d = np.frombuffer(rgb_response.image_data_uint8, dtype=np.uint8)
             img_rgb = img_rgb_1d.reshape(rgb_response.height, rgb_response.width, 3)
@@ -134,13 +140,42 @@ class CVCameraDataset(object):
             img_depth = depth_1d.reshape(depth_response.height, depth_response.width, 3)
             img_depth_cam[camera] = img_depth
 
-        results["rgb"] = img_rgb_cam
-        results["seg"] = img_seg_cam
-        results["segID"] = img_seg_ID
-        results["depth"] = img_depth_cam
+        images_dict['rgb'] = img_rgb_cam
+        images_dict['seg'] = img_seg_cam
+        images_dict['segID'] = img_seg_ID
+        images_dict['depth'] = img_depth_cam
 
-        return results
+        return images_dict
 
+    def get_flyable_region(self, images_dict):
+        # Input:
+        # images_dict: (dict) images dictionary created from CVCameraDataset.take_images_dataset()
+        # pose: AirSim Pose of the drone
+
+        # Output:
+        # N/A, images_dict is updated in-place
+
+        # Determine flyable region without occlusion... need projection of the 4 corners
+        objpos_camera_csys = {}
+
+        for camera in self.cameras:
+            gate_list = imagery.get_visible_gates(images_dict['seg_ID'][camera], self.id_dict)
+            objpos_camera_csys[camera] = {}
+            objpos_camera_csys[camera]['fly_region'] = {}
+
+            camera_info = self.client.simGetCameraInfo(camera_name=camera)
+
+            for gate in gate_list:
+                images_dict['seg_ID'][camera] = imagery.process_flyable_region(self.client, gate,
+                                                                               images_dict['seg_ID'][camera],
+                                                                               camera_info, self.id_dict)
+
+    def get_labeled_images(self):
+        images_dict = self.take_images_dataset()
+        self.get_flyable_region(images_dict)
+
+        # save images
+        # save depths as PFM
 
     def generate_data(self, vehicle_name="drone_1", csv_path=None, fly_region_start_id=101, gate_start_id=1, gate_lim=10):
         # load json or use attribute
@@ -152,39 +187,20 @@ class CVCameraDataset(object):
         # At each position, place camera/drone
         for row in history_df.itertuples():
             # At each position, place camera/drone
-            x = row.x
-            y = row.y
-            z = row.z
-            qw = row.qw
-            qx = row.qx
-            qy = row.qy
-            qz = row.qz
-            pose = airsim.Pose(position_val={'x_val': x, 'y_val': y, 'z_val': z},
-                               orientation_val={'w_val': qw, 'x_val': qx, 'y_val': qy, 'z_val': qz})
+            pose = airsim.Pose(position_val={'x_val': row.x, 'y_val': row.y, 'z_val': row.z},
+                               orientation_val={'w_val': row.qw, 'x_val': row.qx, 'y_val': row.qy, 'z_val': row.qz})
             self.client.simSetVehiclePose(pose, ignore_collision=True, vehicle_name=vehicle_name)
-            # Take images from fpv_cam, back, starboard, port, bottom
-            # RGB, Segmentation, Depth
-            images = self.take_images_dataset()
 
-            # 10 gate algo
+            # Take initial images
+            self.get_labeled_images()
+
             # TODO: place drone 2 randomly and take images again
-
             # Random rotation among 4 quadrants of drone POV...
             # use airsim.utils.to_eularian_angles(pose.orientation), adjust, use airsim.utils.to_quaternion(roll, pitch, yaw)
-            euler_ang0 = airsim.utils.to_eularian_angles(pose.orientation)
+            # euler_ang0 = airsim.utils.to_eularian_angles(pose.orientation)
 
-
-            # Randomize gate sizes?
-
+            # TODO: Randomize gate sizes?
             # TODO: place drone 2 randomly and take images again
-
-            # Determine flyable region without occlusion... need projection!
-            # Determine which part of the flyable region can actually be seen using the segment ID's... occlusion!
-            # Define areas to fill with flyable regions
-            # Determine closest gates given segment ID's -> gate number -> gate location in sim.
-            # New segment ID in increasing distance.
-            # New alpha channel in PNG.
-            # Save depths as PFM
 
 
 def main(sid_path, level_name, save_dir, cam_mode):
