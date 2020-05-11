@@ -38,7 +38,9 @@ class CVCameraDataset(object):
                  cam_mode="single",
                  sess_name=time.ctime(time.time()).replace(':', '.'),
                  cameras=["fpv_cam", "aft", "starboard", "port", "bottom"],
-                 segmentation_id_path=Path("airsim_gd/dataset/segmentation_id_maps.json")):
+                 segmentation_id_path=Path("airsim_gd/dataset/segmentation_id_maps.json"),
+                 gate_label_basename='gate',
+                 fly_region_label_basename='flyregion'):
         self.client = setupASClient()
         self.sid_spreadsheet_loc = Path(sid_spreadsheet_loc)
         self.save_dir = Path(save_dir)
@@ -54,19 +56,31 @@ class CVCameraDataset(object):
 
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
-    def load_level(self, level_name):
+        self.gate_label_basename = gate_label_basename
+        self.fly_region_label_basename = fly_region_label_basename
+
+        self.seg_obj2id = {}
+        self.seg_id2category = {}
+        self.seg_category2id = {}
+
+    def load_level(self, level_name, category_seg_id_tab):
         if level_name not in level_list:
             raise ValueError("Invalid level. Choose one from {}".format(level_list))
 
         self.client.simLoadLevel(level_name)
         self.level_name = level_name
-        self.id_dict = {}
 
-        # load segment ID's
+        # load segment ID's - level specific
         df = pd.read_excel(self.sid_spreadsheet_loc, sheet_name=level_name)
         for obj, seg_id in zip(df['object'], df['segment_ID']):
             self.client.simSetSegmentationObjectID(obj, seg_id)
-            self.id_dict[seg_id] = obj
+            self.seg_obj2id[obj] = seg_id
+
+        # load segment ID's - general
+        df = pd.read_excel(self.sid_spreadsheet_loc, sheet_name=category_seg_id_tab)
+        for category, seg_id in zip(df['category'], df['segment_ID']):
+            self.seg_id2category[seg_id] = category
+            self.seg_category2id[category] = seg_id
 
     def record_path(self, vehicle_name="drone_1", interval=0.05):
         t_start = time.clock()
@@ -156,19 +170,32 @@ class CVCameraDataset(object):
         # N/A, images_dict is updated in-place
 
         # Determine flyable region without occlusion... need projection of the 4 corners
-        objpos_camera_csys = {}
-
         for camera in self.cameras:
-            gate_list = imagery.get_visible_gates(images_dict['seg_ID'][camera], self.id_dict)
-            objpos_camera_csys[camera] = {}
-            objpos_camera_csys[camera]['fly_region'] = {}
+            seg_image = images_dict['seg_ID'][camera]
+            depth_image = images_dict['depth'][camera]
 
+            gate_list = imagery.get_visible_gates(seg_image, self.seg_id2category)
             camera_info = self.client.simGetCameraInfo(camera_name=camera)
+            sorted_gate_info = imagery.get_sorted_gate_labels(self.client, camera_info, gate_list,
+                                                              self.gate_label_basename, self.fly_region_label_basename)
 
-            for gate in gate_list:
-                images_dict['seg_ID'][camera] = imagery.process_flyable_region(self.client, gate,
-                                                                               images_dict['seg_ID'][camera],
-                                                                               camera_info, self.id_dict)
+            gate_mask_list = []
+            for i, (gate_name, _) in enumerate(sorted_gate_info):
+                region_label = f"{self.fly_region_label_basename}_{str(i + 1)}"
+
+                gate_mask_list.append(seg_image == self.seg_obj2id[gate_name])
+
+                # Process chain
+                img_wh = seg_image.shape
+                fly_region_global = imagery.get_flyable_region(self.client, gate_name)
+                fly_region_cam = imagery.project_global2cam_fly_region(fly_region_global, camera_info, img_wh)
+
+                images_dict['seg_ID'][camera] = imagery.segment_flyable_region(region_label, seg_image, depth_image, fly_region_global, fly_region_cam,
+                                                                               camera_info, self.seg_category2id)
+
+            for i in range(sorted_gate_info):
+                # Doing this outside the previous for loop to prevent multiple gates being edited at oncec
+                images_dict['seg_ID'][camera][gate_mask_list[i]] = self.seg_category2id[f"{self.gate_label_basename}_{str(i+1)}"]
 
     def get_labeled_images(self):
         images_dict = self.take_images_dataset()
@@ -203,16 +230,17 @@ class CVCameraDataset(object):
             # TODO: place drone 2 randomly and take images again
 
 
-def main(sid_path, level_name, save_dir, cam_mode):
+def main(sid_path, level_name, category_seg_id_tab, save_dir, cam_mode):
     CVCameraDataset(sid_path, save_dir, cam_mode)
-    CVCameraDataset.load_level(level_name)
+    CVCameraDataset.load_level(level_name, category_seg_id_tab)
     CVCameraDataset.record_data()
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument('--sid_path', type=str, default=Path("levels_objects.xlsx"))
     parser.add_argument('--level_name', type=str, choices=["Soccer_Field_Easy", "Soccer_Field_Medium", "ZhangJiaJie_Medium", "Building99_Hard"], default="Soccer_Field_Medium")
+    parser.add_argument('--category_id_tab', type=str, default=Path("SegmentIDs"))
     parser.add_argument('--save_dir', type=str, default=Path("results"))
     parser.add_argument('--cam_mode', type=str, choices=["single", "cont"], default="single")
     args = parser.parse_args()
-    main(args.sid_path, args.level_name, args.save_dir, args.cam_mode)
+    main(args.sid_path, args.level_name, args.seg_id_tab, args.save_dir, args.cam_mode)

@@ -1,8 +1,8 @@
 import numpy as np
+import cv2 as cv2
 import airsimneurips as airsim
 
 from airsim_gd.dataset.utils import math_utils
-
 
 def get_visible_gates(seg_image, seg_id_dict):
     gate_list = []
@@ -12,6 +12,20 @@ def get_visible_gates(seg_image, seg_id_dict):
             gate_list.append(obj_id)
 
     return gate_list
+
+
+def get_sorted_gates(airsim_client, camera_info, gate_list):
+    results = []
+
+    for gate_name in gate_list:
+        gate_pose = airsim_client.simGetObjectPose(object_name=gate_name)
+        distance = np.sum((np.array([camera_info.pose.position.x_val, camera_info.pose.position.y_val, camera_info.pose.position.z_val]) -
+                           np.array([gate_pose.position.x_val, gate_pose.position.y_val, gate_pose.position.z_val]))**2)**0.5
+        results.append([gate_name, distance])
+
+    results.sort(key=lambda x: x[1])
+
+    return results
 
 
 def project_3d_point_to_screen(subjectXYZ, camXYZ, camQuaternion, camProjMatrix4x4, imageWidthHeight):
@@ -93,49 +107,67 @@ def get_flyable_region(airsim_client, gate_name, inner_dim=(1.6, 0.2, 1.6), oute
     return fly_region_global
 
 
-def fly_region_global2cam(fly_region_global, camera_info, img_wh):
+def project_global2cam_fly_region(fly_region_global, camera_info, img_wh):
 
     cam_pose = camera_info.pose
     projection_mat = camera_info.proj_mat
     fly_region_cam = {}
 
-    fly_region_cam['h_topleft'], fly_region_cam['w_topleft'] = project_3d_point_to_screen(fly_region_global['top_left'],
-                                                                                          cam_pose.position,
-                                                                                          cam_pose.orientation,
-                                                                                          projection_mat, img_wh)
+    # H, W
+    fly_region_cam['top_left'] = project_3d_point_to_screen(fly_region_global['top_left'],
+                                                            cam_pose.position,
+                                                            cam_pose.orientation,
+                                                            projection_mat, img_wh)
 
-    fly_region_cam['h_topright'], fly_region_cam['w_topright'] = project_3d_point_to_screen(fly_region_global['top_right'],
-                                                                                            cam_pose.position,
-                                                                                            cam_pose.orientation,
-                                                                                            projection_mat, img_wh)
+    fly_region_cam['top_right'] = project_3d_point_to_screen(fly_region_global['top_right'],
+                                                             cam_pose.position,
+                                                             cam_pose.orientation,
+                                                             projection_mat, img_wh)
 
-    fly_region_cam['h_botleft'], fly_region_cam['w_botleft'] = project_3d_point_to_screen(fly_region_global['bot_left'],
-                                                                                          cam_pose.position,
-                                                                                          cam_pose.orientation,
-                                                                                          projection_mat, img_wh)
+    fly_region_cam['bot_left'] = project_3d_point_to_screen(fly_region_global['bot_left'],
+                                                            cam_pose.position,
+                                                            cam_pose.orientation,
+                                                            projection_mat, img_wh)
 
-    fly_region_cam['h_botright'], fly_region_cam['w_botright'] = project_3d_point_to_screen(fly_region_global['bot_right'],
-                                                                                            cam_pose.position,
-                                                                                            cam_pose.orientation,
-                                                                                            projection_mat, img_wh)
+    fly_region_cam['bot_right'] = project_3d_point_to_screen(fly_region_global['bot_right'],
+                                                             cam_pose.position,
+                                                             cam_pose.orientation,
+                                                             projection_mat, img_wh)
 
     return fly_region_cam
 
-def get_final_flyable_region(seg_image, fly_region_cam, seg_id_dict):
+def segment_flyable_region(region_label, seg_image, depth_image, fly_region_global, fly_region_cam, camera_info, category2id_dict):
     # TODO: Determine which part of the flyable region can actually be seen using the segment ID's... occlusion!
     # Define areas to fill with flyable regions
     # Determine closest gates given segment ID's -> gate number -> gate location in sim.
     # New segment ID in increasing distance.
     # New alpha channel in PNG.
-    pass
 
+    final_seg_image = np.copy(seg_image)
 
-def process_flyable_region(airsim_client, gate_name, seg_image, camera_info, seg_id_dict):
-    # Process chain
-    img_wh = seg_image.shape
-    fly_region_global = get_flyable_region(airsim_client, gate_name)
+    # using fly_region_cam, get the pixels of the region and their depths
+    pts = np.array(list(fly_region_cam.values()), dtype=np.int32)
 
-    fly_region_cam = fly_region_global2cam(fly_region_global, camera_info, img_wh)
-    final_seg_image = get_final_flyable_region(seg_image, fly_region_cam, seg_id_dict)
+    mask = np.zeros_like(final_seg_image)
+
+    # in cv2, y is row, x is col
+    cv2.fillConvexPoly(mask, pts, 1)
+    mask = mask.astype(np.bool)
+
+    # region_id_mask = np.zeros_like(final_seg_image)
+    # region_id_mask[mask] = final_seg_image[mask]
+
+    region_dist_mask = np.zeros_like(final_seg_image)
+    region_dist_mask[mask] = depth_image[mask]
+
+    # get plane using fly_region_global, check which points in fly_region_cam are between camera and region
+    # assume that if any of the distances are less than the min distance between the camera and any of the 4 pts,
+    # then there is occlusion
+    thres = np.min(np.sum((np.array([camera_info.pose.position.x_val, camera_info.pose.position.y_val, camera_info.pose.position.z_val]) -
+                           np.array(list(fly_region_global.values())))**2, axis=-1)**0.5
+                   )
+
+    # those that not between camera and region are changed to flyable region ID
+    final_seg_image[region_dist_mask > thres] = category2id_dict[region_label]
 
     return final_seg_image
