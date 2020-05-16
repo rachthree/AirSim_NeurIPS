@@ -29,8 +29,13 @@ def pose_to_array(pose):
 
 
 def pix_to_id(pix_array, rgb2id_dict):
-    return rgb2id_dict[pix_array[0]][pix_array[1]][pix_array[2]]
+    return rgb2id_dict[tuple(pix_array)]
 
+
+def json_list_to_mapping(segID_map_list):
+    id2rgb = {x['id']: tuple(x['rgb']) for x in segID_map_list}
+    rgb2id = {tuple(x['rgb']): x['id'] for x in segID_map_list}
+    return id2rgb, rgb2id
 
 class CVCameraDataset(object):
     def __init__(self, sid_spreadsheet_loc=Path("airsim_gd/dataset/levels_objects.xlsx"),
@@ -50,9 +55,10 @@ class CVCameraDataset(object):
         self.level_name = ""
         self.cameras = cameras
 
-        segID_maps = json.load(segmentation_id_path)
-        self.id2rgb = segID_maps["id2rgb"]
-        self.rgb2id = segID_maps["rgb2id"]
+        with open(Path(segmentation_id_path)) as f:
+            segID_map_list = json.load(f)
+
+        self.id2rgb, self.rgb2id = json_list_to_mapping(segID_map_list)
 
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -123,6 +129,7 @@ class CVCameraDataset(object):
         img_seg_cam = {}
         img_seg_id_cam = {}
         img_depth_cam = {}
+        img_infra_cam = {}
         images_dict = {}
 
         for camera in self.cameras:
@@ -135,6 +142,8 @@ class CVCameraDataset(object):
                 airsim.ImageRequest(camera, airsim.ImageType.Segmentation, pixels_as_float=False, compress=False),
                 # Depth
                 airsim.ImageRequest(camera, airsim.ImageType.DepthVis, pixels_as_float=True, compress=False)
+                # Infrared
+                airsim.ImageRequest(camera, airsim.ImageType.Infrared, pixels_as_float=False, compress=False)
             ])
 
             rgb_response = responses[0]
@@ -150,14 +159,20 @@ class CVCameraDataset(object):
             img_seg_id_cam[camera] = img_seg_ID
 
             depth_response = responses[2]
-            depth_1d = np.frombuffer(depth_response.image_data_uint8, dtype=np.uint8)
-            img_depth = depth_1d.reshape(depth_response.height, depth_response.width, 3)
+            depth_1d = np.array(depth_response.image_data_float)
+            img_depth = depth_1d.reshape(depth_response.height, depth_response.width)
             img_depth_cam[camera] = img_depth
+
+            infra_response = responses[3]
+            infra_1d = np.frombuffer(infra_response.image_data_uint8, dtype=np.uint8)
+            img_infra = infra_1d.reshape(infra_response.height, infra_response.width)
+            img_infra_cam[camera] = img_infra
 
         images_dict['rgb'] = img_rgb_cam
         images_dict['seg'] = img_seg_cam
         images_dict['segID'] = img_seg_ID
         images_dict['depth'] = img_depth_cam
+        images_dict['infra'] = img_infra_cam
 
         return images_dict
 
@@ -194,7 +209,7 @@ class CVCameraDataset(object):
                                                                                camera_info, self.seg_category2id)
 
             for i in range(sorted_gate_info):
-                # Doing this outside the previous for loop to prevent multiple gates being edited at oncec
+                # Doing this outside the previous for loop to prevent multiple gates being edited at once
                 images_dict['seg_ID'][camera][gate_mask_list[i]] = self.seg_category2id[f"{self.gate_label_basename}_{str(i+1)}"]
 
     def get_labeled_images(self):

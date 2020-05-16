@@ -1,5 +1,6 @@
 AirSim
 .idea
+*.ipynb
 source
 airsim_gd.egg-info
 __pycache__

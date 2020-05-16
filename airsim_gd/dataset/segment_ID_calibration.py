@@ -1,4 +1,4 @@
-# For airsim.exe v 0.2
+# For airsim.exe training binary
 
 import airsimneurips as airsim
 import numpy as np
@@ -24,24 +24,17 @@ for id in range(256):
     id_rgb = img_seg[int(seg_response.height/2), int(seg_response.height/2), :].astype(int).tolist()
     id2rgb[id] = id_rgb
 
-    if id_rgb[0] not in rgb2id.keys():
-        rgb2id[id_rgb[0]] = {id_rgb[1]: {id_rgb[2]: id}}
-
-    elif id_rgb[1] not in rgb2id[id_rgb[0]].keys():
-        rgb2id[id_rgb[0]][id_rgb[1]] = {id_rgb[2]: id}
-
-    else:
-        rgb2id[id_rgb[0]][id_rgb[1]][id_rgb[2]] = id
+    rgb2id[(id_rgb[0], id_rgb[1], id_rgb[2])] = id
 
 for id in range(256):
     test_rgb = id2rgb[id]
-    test_id = rgb2id[test_rgb[0]][test_rgb[1]][test_rgb[2]]
+    test_id = rgb2id[(test_rgb[0], test_rgb[1], test_rgb[2])]
     if id != test_id:
         raise ValueError(f'{id} has RBG {test_rgb} from sim but rgb2id has ID {test_id}')
 
 print("Verification success!")
 
-results = {"id2rgb": id2rgb, "rgb2id": rgb2id}
+results = [{'id': k, 'rgb': v} for k, v in id2rgb.items()]
 
 with open('segmentation_id_maps.json', 'w') as f:
     json.dump(results, f, indent=4, separators=[",", ": "])
