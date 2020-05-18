@@ -28,14 +28,30 @@ def pose_to_array(pose):
             pose.orientation.w_val, pose.orientation.x_val, pose.orientation.y_val, pose.orientation.z_val]
 
 
-def pix_to_id(pix_array, rgb2id_dict):
+def rgb_to_id(pix_array, rgb2id_dict):
     return rgb2id_dict[tuple(pix_array)]
 
 
-def json_list_to_mapping(segID_map_list):
-    id2rgb = {x['id']: tuple(x['rgb']) for x in segID_map_list}
-    rgb2id = {tuple(x['rgb']): x['id'] for x in segID_map_list}
+def id_to_rgb(seg_id, id2rgb_dict):
+    # to be used with np.apply_along_axis with the segmentation ID array
+    seg_id = seg_id if isinstance(seg_id, int) else seg_id[0]
+    rgb = id2rgb_dict[seg_id]
+    return np.array([rgb[0], rgb[1], rgb[2]])
+
+
+def rgb2id_seg_img(rgb_seg_img, rgb2id_dict):
+    return np.apply_along_axis(rgb_to_id, 2, rgb_seg_img, rgb2id_dict)
+
+
+def id2rgb_seg_img(id_seg_img, id2rgb_dict):
+    return np.apply_along_axis(id_to_rgb, 2, id_seg_img[:, :, np.newaxis], id2rgb_dict)
+
+
+def json_list_to_mapping(seg_id_map_list):
+    id2rgb = {x['id']: tuple(x['rgb']) for x in seg_id_map_list}
+    rgb2id = {tuple(x['rgb']): x['id'] for x in seg_id_map_list}
     return id2rgb, rgb2id
+
 
 class CVCameraDataset(object):
     def __init__(self, sid_spreadsheet_loc=Path("airsim_gd/dataset/levels_objects.xlsx"),
@@ -56,9 +72,9 @@ class CVCameraDataset(object):
         self.cameras = cameras
 
         with open(Path(segmentation_id_path)) as f:
-            segID_map_list = json.load(f)
+            seg_id_map_list = json.load(f)
 
-        self.id2rgb, self.rgb2id = json_list_to_mapping(segID_map_list)
+        self.id2rgb, self.rgb2id = json_list_to_mapping(seg_id_map_list)
 
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -126,10 +142,9 @@ class CVCameraDataset(object):
         # SurfaceNormals = 6,
         # Infrared = 7
         img_rgb_cam = {}
-        img_seg_cam = {}
+        img_seg_rgb_cam = {}
         img_seg_id_cam = {}
         img_depth_cam = {}
-        img_infra_cam = {}
         images_dict = {}
 
         for camera in self.cameras:
@@ -141,9 +156,7 @@ class CVCameraDataset(object):
                 # floating point uncompressed image
                 airsim.ImageRequest(camera, airsim.ImageType.Segmentation, pixels_as_float=False, compress=False),
                 # Depth
-                airsim.ImageRequest(camera, airsim.ImageType.DepthVis, pixels_as_float=True, compress=False)
-                # Infrared
-                airsim.ImageRequest(camera, airsim.ImageType.Infrared, pixels_as_float=False, compress=False)
+                airsim.ImageRequest(camera, airsim.ImageType.DepthVis, pixels_as_float=True, compress=False),
             ])
 
             rgb_response = responses[0]
@@ -154,25 +167,18 @@ class CVCameraDataset(object):
             seg_response = responses[1]
             seg_1d = np.frombuffer(seg_response.image_data_uint8, dtype=np.uint8)
             img_seg = seg_1d.reshape(seg_response.height, seg_response.width, 3)
-            img_seg_ID = np.apply_along_axis(pix_to_id, 2, img_seg, self.rgb2id)
-            img_seg_cam[camera] = img_seg
-            img_seg_id_cam[camera] = img_seg_ID
+            img_seg_rgb_cam[camera] = img_seg
+            img_seg_id_cam[camera] = rgb2id_seg_img(img_seg, self.rgb2id)
 
             depth_response = responses[2]
             depth_1d = np.array(depth_response.image_data_float)
             img_depth = depth_1d.reshape(depth_response.height, depth_response.width)
             img_depth_cam[camera] = img_depth
 
-            infra_response = responses[3]
-            infra_1d = np.frombuffer(infra_response.image_data_uint8, dtype=np.uint8)
-            img_infra = infra_1d.reshape(infra_response.height, infra_response.width)
-            img_infra_cam[camera] = img_infra
-
         images_dict['rgb'] = img_rgb_cam
-        images_dict['seg'] = img_seg_cam
-        images_dict['segID'] = img_seg_ID
+        images_dict['seg_rgb'] = img_seg_rgb_cam
+        images_dict['seg_id'] = img_seg_id_cam
         images_dict['depth'] = img_depth_cam
-        images_dict['infra'] = img_infra_cam
 
         return images_dict
 
