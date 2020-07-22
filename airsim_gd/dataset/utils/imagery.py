@@ -4,12 +4,15 @@ import airsimneurips as airsim
 
 from airsim_gd.dataset.utils import math_utils
 
-def get_visible_gates(seg_image, seg_id_dict):
+def get_visible_gates(seg_image, id2lvlobjs_dict):
     gate_list = []
 
-    for obj_id in np.unique(seg_image[:, :, 0]):
-        if 'gate' in seg_id_dict[obj_id].lower():
-            gate_list.append(obj_id)
+    for obj_id in np.unique(seg_image):
+        if 'gate' in ' '.join(id2lvlobjs_dict[obj_id]).lower():
+            if len(id2lvlobjs_dict[obj_id]) > 1:
+                raise ValueError(f"Multiple objects assigned same gate segmentation ID {obj_id}")
+
+            gate_list.append(id2lvlobjs_dict[obj_id][0])
 
     return gate_list
 
@@ -32,7 +35,7 @@ def project_3d_point_to_screen(subjectXYZ, camXYZ, camQuaternion, camProjMatrix4
     # Source: https://github.com/microsoft/AirSim/blob/master/PythonClient/computer_vision/capture_ir_segmentation.py
 
     # Turn the camera position into a column vector.
-    camPosition = np.transpose([camXYZ])
+    camPosition = np.array([[camXYZ.x_val, camXYZ.y_val, camXYZ.z_val]]).T
 
     # Convert the camera's quaternion rotation to yaw, pitch, roll angles.
     pitchRollYaw = airsim.to_eularian_angles(camQuaternion)
@@ -43,9 +46,9 @@ def project_3d_point_to_screen(subjectXYZ, camXYZ, camQuaternion, camProjMatrix4
     # Change coordinates to get subjectXYZ in the camera's local coordinate system.
     XYZW = np.transpose([subjectXYZ])
     XYZW = np.add(XYZW, -camPosition)
-    print("XYZW: " + str(XYZW))
+    #print("XYZW: " + str(XYZW))
     XYZW = np.matmul(np.transpose(camRotation), XYZW)
-    print("XYZW derot: " + str(XYZW))
+    #print("XYZW derot: " + str(XYZW))
 
     # Recreate the perspective projection of the camera.
     XYZW = np.concatenate([XYZW, [[1]]])
@@ -56,10 +59,7 @@ def project_3d_point_to_screen(subjectXYZ, camXYZ, camQuaternion, camProjMatrix4
     normX = (1 - XYZW[0]) / 2
     normY = (1 + XYZW[1]) / 2
 
-    return np.array([
-        imageWidthHeight[0] * normX,
-        imageWidthHeight[1] * normY
-    ]).reshape(2, )
+    return np.array([int(imageWidthHeight[1] * normX), int(imageWidthHeight[0] * normY)])
 
 
 def get_flyable_region(airsim_client, gate_name, inner_dim=(1.6, 0.2, 1.6), outer_dim=(2.1333, 0.2, 2.1333)):
@@ -67,8 +67,8 @@ def get_flyable_region(airsim_client, gate_name, inner_dim=(1.6, 0.2, 1.6), oute
     # Inputs:
     # airsim_client: AirSim client
     # gate_name: (str) the gate name
-    # inner_dim: (tuple) inner dimensions of gate (W x D x H)
-    # outer_dim: (tuple) outer dimensions of gate (W x D x H)
+    # inner_dim: (tuple) inner dimensions of gate (W x D x H) in m
+    # outer_dim: (tuple) outer dimensions of gate (W x D x H) in m
     #
     # Outputs:
     # fly_region_global: (dict) dictionary with global coordinates of the flyable region
@@ -82,27 +82,27 @@ def get_flyable_region(airsim_client, gate_name, inner_dim=(1.6, 0.2, 1.6), oute
     # Assume flyable region is at front of the gate
 
     fly_region_global = {}
-    x = [1, 0, 0]  # right of gate, gate front visible
-    y = [0, 1, 0]  # out of gate
-    z = [0, 0, 1]  # downwards in AirSim Coordinates
+    x = np.array([1, 0, 0])
+    y = np.array([0, 1, 0])
+    z = np.array([0, 0, 1])
 
-    k = airsim_client.simGetObjectScale(object_name=gate_name)  # gate scale
+    ks = airsim_client.simGetObjectScale(object_name=gate_name)  # gate scale
 
-    region_size = k*[outer_dim[0] - inner_dim[0], outer_dim[2] - inner_dim[2]]  # [x, z]
-    gate_t = inner_dim[1]
+    region_size = [ks.x_val*inner_dim[0], ks.z_val*inner_dim[2]]  # [x, z]
+    gate_t = ks.y_val*inner_dim[1]
     gate_pose = airsim_client.simGetObjectPose(object_name=gate_name)
     gate_center = [gate_pose.position.x_val, gate_pose.position.y_val, gate_pose.position.z_val]
     rotmat = math_utils.quat2mat(gate_pose.orientation)
 
     # Gate Csys
-    gate_x = rotmat.dot(x)
-    gate_y = rotmat.dot(y)
-    gate_z = rotmat.dot(z)
+    gate_x = rotmat.dot(x)  # left of gate, gate front visible
+    gate_y = rotmat.dot(y)  # front to back of gate
+    gate_z = rotmat.dot(z)  # downwards in AirSim Coordinates
 
-    fly_region_global['top_left'] = gate_center - gate_x*region_size[0]/2 + gate_y*gate_t/2 - gate_z*region_size[1]/2
-    fly_region_global['top_right'] = gate_center + gate_x*region_size[0]/2 + gate_y*gate_t/2 - gate_z*region_size[1]/2
-    fly_region_global['bot_left'] = gate_center - gate_x*region_size[0]/2 + gate_y*gate_t/2 + gate_z*region_size[1]/2
-    fly_region_global['bot_right'] = gate_center + gate_x*region_size[0]/2 + gate_y*gate_t/2 + gate_z*region_size[1]/2
+    fly_region_global['top_left'] = gate_center + gate_x*region_size[0]/2 + gate_y*gate_t/2 - gate_z*region_size[1]/2
+    fly_region_global['top_right'] = gate_center - gate_x*region_size[0]/2 + gate_y*gate_t/2 - gate_z*region_size[1]/2
+    fly_region_global['bot_left'] = gate_center + gate_x*region_size[0]/2 + gate_y*gate_t/2 + gate_z*region_size[1]/2
+    fly_region_global['bot_right'] = gate_center - gate_x*region_size[0]/2 + gate_y*gate_t/2 + gate_z*region_size[1]/2
 
     return fly_region_global
 
@@ -110,7 +110,7 @@ def get_flyable_region(airsim_client, gate_name, inner_dim=(1.6, 0.2, 1.6), oute
 def project_global2cam_fly_region(fly_region_global, camera_info, img_wh):
 
     cam_pose = camera_info.pose
-    projection_mat = camera_info.proj_mat
+    projection_mat = camera_info.proj_mat.matrix
     fly_region_cam = {}
 
     # H, W
@@ -146,7 +146,10 @@ def segment_flyable_region(region_label, seg_image, depth_image, fly_region_glob
     final_seg_image = np.copy(seg_image)
 
     # using fly_region_cam, get the pixels of the region and their depths
-    pts = np.array(list(fly_region_cam.values()), dtype=np.int32)
+    pts = np.array([fly_region_cam['top_left'],
+                    fly_region_cam['top_right'],
+                    fly_region_cam['bot_right'],
+                    fly_region_cam['bot_left']]).astype(np.int32)
 
     mask = np.zeros_like(final_seg_image)
 

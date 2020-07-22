@@ -5,6 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 import csv
 from argparse import ArgumentParser
+from collections import defaultdict
 
 import numpy as np
 import cv2 as cv
@@ -61,7 +62,8 @@ class CVCameraDataset(object):
                  cameras=["fpv_cam", "aft", "starboard", "port", "bottom"],
                  segmentation_id_path=Path("airsim_gd/dataset/segmentation_id_maps.json"),
                  gate_label_basename='gate',
-                 fly_region_label_basename='flyregion'):
+                 fly_region_label_basename='flyregion',
+                 max_depth=None):
         self.client = setupASClient()
         self.sid_spreadsheet_loc = Path(sid_spreadsheet_loc)
         self.save_dir = Path(save_dir)
@@ -70,6 +72,7 @@ class CVCameraDataset(object):
         self.sess_name = sess_name
         self.level_name = ""
         self.cameras = cameras
+        self.max_depth = max_depth  # meters
 
         with open(Path(segmentation_id_path)) as f:
             seg_id_map_list = json.load(f)
@@ -81,7 +84,8 @@ class CVCameraDataset(object):
         self.gate_label_basename = gate_label_basename
         self.fly_region_label_basename = fly_region_label_basename
 
-        self.seg_obj2id = {}
+        self.seg_lvlobj2id = {}
+        self.seg_id2lvlobjs = defaultdict(list)
         self.seg_id2category = {}
         self.seg_category2id = {}
 
@@ -96,7 +100,8 @@ class CVCameraDataset(object):
         df = pd.read_excel(self.sid_spreadsheet_loc, sheet_name=level_name)
         for obj, seg_id in zip(df['object'], df['segment_ID']):
             self.client.simSetSegmentationObjectID(obj, seg_id)
-            self.seg_obj2id[obj] = seg_id
+            self.seg_lvlobj2id[obj] = seg_id
+            self.seg_id2lvlobjs[seg_id].append(obj)
 
         # load segment ID's - general
         df = pd.read_excel(self.sid_spreadsheet_loc, sheet_name=category_seg_id_tab)
@@ -156,7 +161,7 @@ class CVCameraDataset(object):
                 # floating point uncompressed image
                 airsim.ImageRequest(camera, airsim.ImageType.Segmentation, pixels_as_float=False, compress=False),
                 # Depth
-                airsim.ImageRequest(camera, airsim.ImageType.DepthVis, pixels_as_float=True, compress=False),
+                airsim.ImageRequest(camera, airsim.ImageType.DepthPerspective, pixels_as_float=True, compress=False),
             ])
 
             rgb_response = responses[0]
@@ -173,6 +178,9 @@ class CVCameraDataset(object):
             depth_response = responses[2]
             depth_1d = np.array(depth_response.image_data_float)
             img_depth = depth_1d.reshape(depth_response.height, depth_response.width)
+            if self.max_depth:
+                img_depth[img_depth > self.max_depth] = self.max_depth
+
             img_depth_cam[camera] = img_depth
 
         images_dict['rgb'] = img_rgb_cam
@@ -192,31 +200,30 @@ class CVCameraDataset(object):
 
         # Determine flyable region without occlusion... need projection of the 4 corners
         for camera in self.cameras:
-            seg_image = images_dict['seg_ID'][camera]
+            seg_image = images_dict['seg_id'][camera]
             depth_image = images_dict['depth'][camera]
 
             gate_list = imagery.get_visible_gates(seg_image, self.seg_id2category)
             camera_info = self.client.simGetCameraInfo(camera_name=camera)
-            sorted_gate_info = imagery.get_sorted_gate_labels(self.client, camera_info, gate_list,
-                                                              self.gate_label_basename, self.fly_region_label_basename)
+            sorted_gate_info = imagery.get_sorted_gates(self.client, camera_info, gate_list)
 
             gate_mask_list = []
             for i, (gate_name, _) in enumerate(sorted_gate_info):
                 region_label = f"{self.fly_region_label_basename}_{str(i + 1)}"
 
-                gate_mask_list.append(seg_image == self.seg_obj2id[gate_name])
+                gate_mask_list.append(seg_image == self.seg_lvlobj2id[gate_name])
 
                 # Process chain
                 img_wh = seg_image.shape
                 fly_region_global = imagery.get_flyable_region(self.client, gate_name)
                 fly_region_cam = imagery.project_global2cam_fly_region(fly_region_global, camera_info, img_wh)
 
-                images_dict['seg_ID'][camera] = imagery.segment_flyable_region(region_label, seg_image, depth_image, fly_region_global, fly_region_cam,
+                images_dict['seg_id'][camera] = imagery.segment_flyable_region(region_label, images_dict['seg_id'][camera], depth_image, fly_region_global, fly_region_cam,
                                                                                camera_info, self.seg_category2id)
 
-            for i in range(sorted_gate_info):
+            for i in range(len(sorted_gate_info)):
                 # Doing this outside the previous for loop to prevent multiple gates being edited at once
-                images_dict['seg_ID'][camera][gate_mask_list[i]] = self.seg_category2id[f"{self.gate_label_basename}_{str(i+1)}"]
+                images_dict['seg_id'][camera][gate_mask_list[i]] = self.seg_category2id[f"{self.gate_label_basename}_{str(i+1)}"]
 
     def get_labeled_images(self):
         images_dict = self.take_images_dataset()
