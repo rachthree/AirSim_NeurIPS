@@ -200,7 +200,7 @@ class CVCameraDataset(object):
 
         # Determine flyable region without occlusion... need projection of the 4 corners
         for camera in self.cameras:
-            seg_image = images_dict['seg_id'][camera]
+            seg_image = np.copy(images_dict['seg_id'][camera])
             depth_image = images_dict['depth'][camera]
 
             gate_list = imagery.get_visible_gates(seg_image, self.seg_id2category)
@@ -208,22 +208,24 @@ class CVCameraDataset(object):
             sorted_gate_info = imagery.get_sorted_gates(self.client, camera_info, gate_list)
 
             gate_mask_list = []
-            for i, (gate_name, _) in enumerate(sorted_gate_info):
-                region_label = f"{self.fly_region_label_basename}_{str(i + 1)}"
-
+            for gate_name, _ in sorted_gate_info:
+                # Doing this outside for loop to prevent multiple gates being edited at once
                 gate_mask_list.append(seg_image == self.seg_lvlobj2id[gate_name])
 
-                # Process chain
+            for i in range(len(gate_mask_list)):
+                # Relabeling gates before occlusion-accounting flyable region labelling
+                # only 1-n will be labels
+                images_dict['seg_id'][camera][gate_mask_list[i]] = self.seg_category2id[f"{self.gate_label_basename}_{str(i + 1)}"]
+
+            for i, (gate_name, _) in enumerate(sorted_gate_info):
+                # Process chain.
+                region_label = f"{self.fly_region_label_basename}_{str(i + 1)}"
                 img_wh = seg_image.shape
                 fly_region_global = imagery.get_flyable_region(self.client, gate_name)
                 fly_region_cam = imagery.project_global2cam_fly_region(fly_region_global, camera_info, img_wh)
 
                 images_dict['seg_id'][camera] = imagery.segment_flyable_region(region_label, images_dict['seg_id'][camera], depth_image, fly_region_global, fly_region_cam,
                                                                                camera_info, self.seg_category2id)
-
-            for i in range(len(sorted_gate_info)):
-                # Doing this outside the previous for loop to prevent multiple gates being edited at once
-                images_dict['seg_id'][camera][gate_mask_list[i]] = self.seg_category2id[f"{self.gate_label_basename}_{str(i+1)}"]
 
     def get_labeled_images(self):
         images_dict = self.take_images_dataset()
