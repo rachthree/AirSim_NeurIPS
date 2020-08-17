@@ -1,12 +1,12 @@
 import numpy as np
-import cv2 as cv2
+import cv2
 import airsimneurips as airsim
 
 from airsim_gd.dataset.utils import math_utils
 
+
 def get_visible_gates(seg_image, id2lvlobjs_dict):
     gate_list = []
-
     for obj_id in np.unique(seg_image):
         if 'gate' in ' '.join(id2lvlobjs_dict[obj_id]).lower():
             if len(id2lvlobjs_dict[obj_id]) > 1:
@@ -136,7 +136,8 @@ def project_global2cam_fly_region(fly_region_global, camera_info, img_wh):
 
     return fly_region_cam
 
-def segment_flyable_region(region_label, seg_image, depth_image, fly_region_global, fly_region_cam, camera_info, category2id_dict):
+
+def segment_flyable_region(region_label, seg_image, depth_image, fly_region_global, fly_region_cam, camera_info, class2id_dict):
     # TODO: Determine which part of the flyable region can actually be seen using the segment ID's... occlusion!
     # Define areas to fill with flyable regions
     # Determine closest gates given segment ID's -> gate number -> gate location in sim.
@@ -171,6 +172,6 @@ def segment_flyable_region(region_label, seg_image, depth_image, fly_region_glob
                    )
 
     # those that not between camera and region are changed to flyable region ID
-    final_seg_image[region_dist_mask > thres] = category2id_dict[region_label]
+    final_seg_image[region_dist_mask > thres] = class2id_dict[region_label]
 
     return final_seg_image

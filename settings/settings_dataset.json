@@ -10,8 +10,8 @@
 	},
   "SubWindows": [
     {"WindowID": 0, "ImageType": 5, "CameraName": "fpv_cam", "Visible": true},
-    {"WindowID": 1, "ImageType": 5, "CameraName": "starboard", "Visible": true},
-    {"WindowID": 2, "ImageType": 5, "CameraName": "port", "Visible": true}
+    {"WindowID": 1, "ImageType": 7, "CameraName": "fpv_cam", "Visible": true},
+    {"WindowID": 2, "ImageType": 3, "CameraName": "fpv_cam", "Visible": true}
   ],
   "Recording": {
     "RecordOnMove": true,
@@ -19,19 +19,19 @@
     "Cameras": [
       { "CameraName": "fpv_cam", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
       { "CameraName": "fpv_cam", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
-      { "CameraName": "fpv_cam", "ImageType": 3, "PixelsAsFloat": true, "Compress": true },
+      { "CameraName": "fpv_cam", "ImageType": 2, "PixelsAsFloat": true, "Compress": true },
       { "CameraName": "bottom", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
       { "CameraName": "bottom", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
-      { "CameraName": "bottom", "ImageType": 3, "PixelsAsFloat": true, "Compress": true },
+      { "CameraName": "bottom", "ImageType": 2, "PixelsAsFloat": true, "Compress": true },
       { "CameraName": "aft", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
       { "CameraName": "aft", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
-      { "CameraName": "aft", "ImageType": 3, "PixelsAsFloat": true, "Compress": true },
+      { "CameraName": "aft", "ImageType": 2, "PixelsAsFloat": true, "Compress": true },
       { "CameraName": "starboard", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
       { "CameraName": "starboard", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
-      { "CameraName": "starboard", "ImageType": 3, "PixelsAsFloat": true, "Compress": true },
+      { "CameraName": "starboard", "ImageType": 2, "PixelsAsFloat": true, "Compress": true },
       { "CameraName": "port", "ImageType": 0, "PixelsAsFloat": false, "Compress": true },
       { "CameraName": "port", "ImageType": 5, "PixelsAsFloat": false, "Compress": true },
-      { "CameraName": "port", "ImageType": 3, "PixelsAsFloat": true, "Compress": true }
+      { "CameraName": "port", "ImageType": 2, "PixelsAsFloat": true, "Compress": true }
     ]
     },
   "Vehicles": {
@@ -54,7 +54,13 @@
 			{
               "FOV_Degrees": 90,
               "Height": 240,
-              "ImageType": 3,
+              "ImageType": 2,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 7,
               "Width": 320
             }
           ],
@@ -82,7 +88,13 @@
 			{
               "FOV_Degrees": 90,
               "Height": 240,
-              "ImageType": 3,
+              "ImageType": 2,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 7,
               "Width": 320
             }
           ],
@@ -110,7 +122,13 @@
 			{
               "FOV_Degrees": 90,
               "Height": 240,
-              "ImageType": 3,
+              "ImageType": 2,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 7,
               "Width": 320
             }
           ],
@@ -138,7 +156,13 @@
 			{
               "FOV_Degrees": 90,
               "Height": 240,
-              "ImageType": 3,
+              "ImageType": 2,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 7,
               "Width": 320
             }
           ],
@@ -166,7 +190,13 @@
 			{
               "FOV_Degrees": 90,
               "Height": 240,
-              "ImageType": 3,
+              "ImageType": 2,
+              "Width": 320
+            },
+			{
+              "FOV_Degrees": 90,
+              "Height": 240,
+              "ImageType": 7,
               "Width": 320
             }
           ],
