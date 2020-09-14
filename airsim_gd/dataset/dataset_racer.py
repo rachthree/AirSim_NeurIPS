@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-from airsim_gd.dataset.cvcam_dataset import pose_to_dict, pose_to_array
+from airsim_gd.dataset.cvcam_dataset import pose_to_dict
 
 # drone_name should match the name in ~/Document/AirSim/settings.json
 class BaselineRacer(object):
@@ -149,7 +149,7 @@ class BaselineRacer(object):
         add_velocity_constraint = True
         add_acceleration_constraint = False
 
-        if self.level_name in ["Soccer_Field_Medium", "Soccer_Field_Easy"] :
+        if self.level_name in ["Soccer_Field_Medium", "Soccer_Field_Easy"]:
             vel_max = 15.0
             acc_max = 3.0
             speed_through_gate = 2.5
@@ -209,7 +209,7 @@ class BaselineRacer(object):
 
     def odometry_callback(self):
         # get uncompressed fpv cam image
-        drone_state = self.airsim_client_odom.getMultirotorState()
+        drone_state = self.airsim_client_odom.getMultirotorState(vehicle_name='drone_2')
         # in world frame:
         position = drone_state.kinematics_estimated.position 
         orientation = drone_state.kinematics_estimated.orientation
@@ -302,7 +302,7 @@ def main(args):
 
     csv_savepath = args.save_dir.joinpath((args.level_name + "_" + args.sess_name).replace(' ', '_') + ".csv")
     history_df = pd.DataFrame(baseline_racer.pose_history)
-    history_df.to_csv(csv_savepath, sep='\t', encoding='utf-8', index=False)
+    history_df.to_csv(csv_savepath, sep=',', encoding='utf-8', index=False)
     print(f"Saved positional time history to {csv_savepath}.")
 
 if __name__ == "__main__":

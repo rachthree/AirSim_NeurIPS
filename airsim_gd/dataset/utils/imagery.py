@@ -31,7 +31,7 @@ def get_sorted_gates(airsim_client, camera_info, gate_list):
     return results
 
 
-def project_3d_point_to_screen(subjectXYZ, camXYZ, camQuaternion, camProjMatrix4x4, imageWidthHeight):
+def project_3d_point_to_screen(subjectXYZ, camXYZ, camQuaternion, camProjMatrix4x4, imageHeightWidth):
     # Source: https://github.com/microsoft/AirSim/blob/master/PythonClient/computer_vision/capture_ir_segmentation.py
 
     # Turn the camera position into a column vector.
@@ -49,6 +49,8 @@ def project_3d_point_to_screen(subjectXYZ, camXYZ, camQuaternion, camProjMatrix4
     #print("XYZW: " + str(XYZW))
     XYZW = np.matmul(np.transpose(camRotation), XYZW)
     #print("XYZW derot: " + str(XYZW))
+    if XYZW[0] < 0:  # point is behind the camera
+        return None
 
     # Recreate the perspective projection of the camera.
     XYZW = np.concatenate([XYZW, [[1]]])
@@ -59,7 +61,7 @@ def project_3d_point_to_screen(subjectXYZ, camXYZ, camQuaternion, camProjMatrix4
     normX = (1 - XYZW[0]) / 2
     normY = (1 + XYZW[1]) / 2
 
-    return np.array([int(imageWidthHeight[1] * normX), int(imageWidthHeight[0] * normY)])
+    return np.array([int(imageHeightWidth[0] * normY), int(imageHeightWidth[1] * normX)])
 
 
 def get_flyable_region(airsim_client, gate_name, inner_dim=(1.6, 0.2, 1.6), outer_dim=(2.1333, 0.2, 2.1333)):
@@ -107,7 +109,7 @@ def get_flyable_region(airsim_client, gate_name, inner_dim=(1.6, 0.2, 1.6), oute
     return fly_region_global
 
 
-def project_global2cam_fly_region(fly_region_global, camera_info, img_wh):
+def project_global2cam_fly_region(fly_region_global, camera_info, img_hw):
 
     cam_pose = camera_info.pose
     projection_mat = camera_info.proj_mat.matrix
@@ -117,22 +119,22 @@ def project_global2cam_fly_region(fly_region_global, camera_info, img_wh):
     fly_region_cam['top_left'] = project_3d_point_to_screen(fly_region_global['top_left'],
                                                             cam_pose.position,
                                                             cam_pose.orientation,
-                                                            projection_mat, img_wh)
+                                                            projection_mat, img_hw)
 
     fly_region_cam['top_right'] = project_3d_point_to_screen(fly_region_global['top_right'],
                                                              cam_pose.position,
                                                              cam_pose.orientation,
-                                                             projection_mat, img_wh)
+                                                             projection_mat, img_hw)
 
     fly_region_cam['bot_left'] = project_3d_point_to_screen(fly_region_global['bot_left'],
                                                             cam_pose.position,
                                                             cam_pose.orientation,
-                                                            projection_mat, img_wh)
+                                                            projection_mat, img_hw)
 
     fly_region_cam['bot_right'] = project_3d_point_to_screen(fly_region_global['bot_right'],
                                                              cam_pose.position,
                                                              cam_pose.orientation,
-                                                             projection_mat, img_wh)
+                                                             projection_mat, img_hw)
 
     return fly_region_cam
 
@@ -146,20 +148,39 @@ def segment_flyable_region(region_label, seg_image, depth_image, fly_region_glob
 
     final_seg_image = np.copy(seg_image)
 
-    # using fly_region_cam, get the pixels of the region and their depths
-    pts = np.array([fly_region_cam['top_left'],
-                    fly_region_cam['top_right'],
-                    fly_region_cam['bot_right'],
-                    fly_region_cam['bot_left']]).astype(np.int32)
+    # Using fly_region_cam, get the pixels of the region and their depths
+    # Pad image in case flyable region was calculated to be outside the bounds of the actual image
+    img_hw = seg_image.shape
+    corner_pts = np.array(list(fly_region_cam.values()))
+    corner_row_min = min(corner_pts[:, 0])
+    corner_row_max = max(corner_pts[:, 0])
+    corner_col_min = min(corner_pts[:, 1])
+    corner_col_max = max(corner_pts[:, 1])
 
-    mask = np.zeros_like(final_seg_image)
+    pad_row_min = min(corner_row_min, 0) - 1
+    pad_row_max = max(corner_row_max, img_hw[0]) + 1
+    pad_col_min = min(corner_col_min, 0) - 1
+    pad_col_max = max(corner_col_max, img_hw[1]) + 1
 
-    # in cv2, y is row, x is col
-    cv2.fillConvexPoly(mask, pts, 1)
+    pad_img_h = img_hw[0] - pad_row_min + pad_row_max
+    pad_img_w = img_hw[1] - pad_col_min + pad_col_max
+    pad_img = np.zeros((pad_img_h, pad_img_w), dtype=np.int32)
+    pad_offset_h = (pad_img_h - img_hw[0]) // 2
+    pad_offset_w = (pad_img_w - img_hw[0]) // 2
+
+    img_mask = np.copy(pad_img)
+    fly_region_mask = np.copy(pad_img)
+    img_mask[pad_offset_h:pad_offset_h+img_hw[0], pad_offset_w:pad_offset_w+img_hw[1]] = 1
+
+    pts_list = []
+    for corner in ['top_left', 'top_right', 'bot_right', 'bot_left']:
+        pt_temp = fly_region_cam[corner] + np.array([pad_offset_h, pad_offset_w])
+        pts_list.append(pt_temp[::-1].astype(np.int32))  # reversed for opencv, y is row, x is col
+
+    cv2.fillConvexPoly(fly_region_mask, np.array(pts_list), 1)
+    mask = img_mask & fly_region_mask
     mask = mask.astype(np.bool)
-
-    # region_id_mask = np.zeros_like(final_seg_image)
-    # region_id_mask[mask] = final_seg_image[mask]
+    mask = mask[pad_offset_h:pad_offset_h+img_hw[0], pad_offset_w:pad_offset_w+img_hw[1]]
 
     region_dist_mask = np.zeros_like(final_seg_image)
     region_dist_mask[mask] = depth_image[mask]
