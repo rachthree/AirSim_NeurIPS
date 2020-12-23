@@ -64,7 +64,7 @@ class CVCameraDataset(object):
                  cam_mode="single",
                  sess_name=time.ctime(time.time()).replace(':', '.'),
                  cameras=["fpv_cam", "aft", "starboard", "port", "bottom"],
-                 segmentation_id_path=Path("airsim_gd/dataset/segmentation_id_maps.json"),
+                 seg_id_map_path=Path("airsim_gd/dataset/segmentation_id_maps.json"),
                  gate_label_basename='gate',
                  fly_region_label_basename='flyregion',
                  max_depth=None,
@@ -80,7 +80,7 @@ class CVCameraDataset(object):
         self.max_depth = max_depth  # meters
         self.vehicle_name = vehicle_name
 
-        with open(Path(segmentation_id_path)) as f:
+        with open(Path(seg_id_map_path)) as f:
             seg_id_map_list = json.load(f)
 
         sim_seg_id_list_path = Path(sim_seg_id_list_path)
@@ -366,7 +366,7 @@ class CVCameraDataset(object):
 
 
 def main(args):
-    datagen = CVCameraDataset(sid_spreadsheet_loc=args.sid_path, save_dir=args.save_dir, cam_mode=args.cam_mode,
+    datagen = CVCameraDataset(sid_spreadsheet_loc=args.sid_path, seg_id_map_path=args.seg_id_map_path, save_dir=args.save_dir, cam_mode=args.cam_mode,
                               vehicle_name=args.vehicle_name,
                               sess_name=args.sess_name)
     mode = args.mode
@@ -404,6 +404,7 @@ if __name__ == "__main__":
     parser.add_argument('--val_percent', type=float, default=0.15)
     parser.add_argument('--test_percent', type=float, default=0.15)
     parser.add_argument('--random_seed', type=int, default=None)
+    parser.add_argument('--seg_id_map_path', type=str, default=Path("airsim_gd/dataset/segmentation_id_maps.json"))
     parser.add_argument('--sim_seg_id_list_path', type=int, default=Path('sim_seg_id_list.json'))
     args = parser.parse_args()
     main(args)

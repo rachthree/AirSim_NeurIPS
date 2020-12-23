@@ -140,12 +140,6 @@ def project_global2cam_fly_region(fly_region_global, camera_info, img_hw):
 
 
 def segment_flyable_region(region_label, seg_image, depth_image, fly_region_global, fly_region_cam, camera_info, class2id_dict):
-    # TODO: Determine which part of the flyable region can actually be seen using the segment ID's... occlusion!
-    # Define areas to fill with flyable regions
-    # Determine closest gates given segment ID's -> gate number -> gate location in sim.
-    # New segment ID in increasing distance.
-    # New alpha channel in PNG.
-
     final_seg_image = np.copy(seg_image)
 
     # Using fly_region_cam, get the pixels of the region and their depths

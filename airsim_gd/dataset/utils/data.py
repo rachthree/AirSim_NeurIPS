@@ -8,51 +8,55 @@ import tensorflow.train as tf_train
 
 
 def _bytes_feature(value):
-  """Returns a bytes_list from a string / byte."""
-  if isinstance(value, type(tf.constant(0))):
-    value = value.numpy() # BytesList won't unpack a string from an EagerTensor.
-  return tf_train.Feature(bytes_list=tf_train.BytesList(value=value))
+    """Returns a bytes_list from a string / byte."""
+    if isinstance(value, type(tf.constant(0))):
+        value = value.numpy()  # BytesList won't unpack a string from an EagerTensor.
+    return tf_train.Feature(bytes_list=tf_train.BytesList(value=[value]))
 
 
 def _float_feature(value):
-  """Returns a float_list from a float / double."""
-  return tf_train.Feature(float_list=tf_train.FloatList(value=value))
+    """Returns a float_list from a float / double."""
+    if not isinstance(value, np.ndarray):
+        value = [value]
+    return tf_train.Feature(float_list=tf_train.FloatList(value=value))
 
 
 def _int64_feature(value):
-  """Returns an int64_list from a bool / enum / int / uint."""
-  return tf_train.Feature(int64_list=tf_train.Int64List(value=value))
+    """Returns an int64_list from a bool / enum / int / uint."""
+    if not isinstance(value, np.ndarray):
+        value = [value]
+    return tf_train.Feature(int64_list=tf_train.Int64List(value=value))
 
 
 def _tensor_feature(array):
     return tf.io.serialize_tensor(array)
 
 
-FEATURE_DESCRIPTION = {'height': tf.io.FixedLenFeature([], tf.int64),
-    'width': tf.io.FixedLenFeature([], tf.int64),
-    'channels': tf.io.FixedLenFeature([], tf.int64),
-    'img_b': tf.io.FixedLenFeature([], tf.string),
-    'mask_b': tf.io.FixedLenFeature([], tf.int64),
-    'depth_b':  tf.io.FixedLenFeature([], tf.float32)
+FEATURE_DESCRIPTION = {'image/height': tf.io.FixedLenFeature([], tf.int64),
+    'image/width': tf.io.FixedLenFeature([], tf.int64),
+    'image/channels': tf.io.FixedLenFeature([], tf.int64),
+    'image/decoded': tf.io.FixedLenFeature([], tf.string),
+    'image/mask': tf.io.FixedLenFeature([], tf.string),
+    'image/depth':  tf.io.FixedLenFeature([], tf.string)
 }
 
 
 def get_tf_example(img_path, mask_path, depth_path):
     with open(img_path, 'rb') as f:
         img_str = f.read()
-    img_feature = tf_train.Feature()
     img = tf.image.decode_image(img_str, channels=3)
+    img = img.numpy()
     img_shape = img.shape
 
     mask_mat = np.load(mask_path)
     depth_mat = np.load(depth_path)
 
-    feature = {'height': _int64_feature([img_shape[0]]),
-        'width': _int64_feature([img_shape[1]]),
-        'channels': _int64_feature([img_shape[2]]),
-        'img_b': _bytes_feature([img_str]),
-        'mask_b': _int64_feature(mask_mat.flatten()),
-        'depth_b':  _float_feature(depth_mat.flatten())
+    feature = {'image/height': _int64_feature(img_shape[0]),
+        'image/width': _int64_feature(img_shape[1]),
+        'image/channels': _int64_feature(img_shape[2]),
+        'image/decoded': _bytes_feature(_tensor_feature(img)),
+        'image/mask': _bytes_feature(_tensor_feature(mask_mat)),
+        'image/depth':  _bytes_feature(_tensor_feature(depth_mat))
     }
 
     return tf.train.Example(features=tf.train.Features(feature=feature))

@@ -4,8 +4,9 @@ from tensorflow.keras import layers, activations
 
 
 def down_sample(input_layer):
-    with keras.backend.name_scope('down_sample'):
-        ds = layers.Conv2D(32, (3, 3), padding='same', strides=(2, 2))(input_layer)
+    with tf.name_scope('down_sample') as scope:
+        ds = layers.Conv2D(32, (3, 3), padding='same', strides=(2, 2),
+                           kernel_regularizer=keras.regularizers.L2(l2=0.00004))(input_layer)
         ds = layers.BatchNormalization()(ds)
         ds = layers.Activation('relu')(ds)
 
@@ -23,7 +24,8 @@ def down_sample(input_layer):
 def _res_bottleneck(inputs, filters, kernel, t, s, residual=False):
     t_channel = keras.backend.int_shape(inputs)[-1] * t
 
-    x = layers.Conv2D(t_channel, (1, 1), padding='same', strides=(1, 1))(inputs)
+    x = layers.Conv2D(t_channel, (1, 1), padding='same', strides=(1, 1),
+                      kernel_regularizer=keras.regularizers.L2(l2=0.00004))(inputs)
     x = layers.BatchNormalization()(x)
     x = layers.Activation('relu')(x)
 
@@ -31,7 +33,8 @@ def _res_bottleneck(inputs, filters, kernel, t, s, residual=False):
     x = layers.BatchNormalization()(x)
     x = layers.Activation('relu')(x)
 
-    x = layers.Conv2D(filters, (1, 1), padding='same', strides=(1, 1))(x)
+    x = layers.Conv2D(filters, (1, 1), padding='same', strides=(1, 1),
+                      kernel_regularizer=keras.regularizers.L2(l2=0.00004))(x)
     x = layers.BatchNormalization()(x)
 
     if residual:
@@ -40,7 +43,7 @@ def _res_bottleneck(inputs, filters, kernel, t, s, residual=False):
 
 
 def bottleneck_block(inputs, filters, kernel, t, strides, n):
-    with keras.backend.name_scope('global_feature_extractor'):
+    with tf.name_scope('global_feature_extractor') as scope:
         x = _res_bottleneck(inputs, filters, kernel, t, strides, residual=False)
 
         for i in range(1, n):
@@ -51,7 +54,7 @@ def bottleneck_block(inputs, filters, kernel, t, strides, n):
 
 def pyramid_pooling_block(input_tensor, bin_sizes, in_h, in_w, reduce_dims=True):
     # Based on https://github.com/hszhao/semseg/blob/master/model/pspnet.py
-    with keras.backend.name_scope('pyramid_pooling'):
+    with tf.name_scope('pyramid_pooling') as scope:
         concat_list = [input_tensor]
         n_filter_out = input_tensor.shape[-1] // len(bin_sizes) if reduce_dims else input_tensor.shape[-1] # 128 could've been incorrect
 
@@ -67,7 +70,8 @@ def pyramid_pooling_block(input_tensor, bin_sizes, in_h, in_w, reduce_dims=True)
             x = layers.Conv2D(n_filter_out, (1, 1), strides=(1, 1), padding='valid', use_bias=False)(x)
             x = layers.BatchNormalization()(x)
             x = layers.Activation('relu')(x)
-            x = layers.Lambda(lambda x_in: tf.image.resize(x_in, (in_h, in_w), method=tf.image.ResizeMethod.BILINEAR))(x)
+            # x = layers.Lambda(lambda x_in: tf.image.resize(x_in, (in_h, in_w), method=tf.image.ResizeMethod.BILINEAR))(x)
+            x = layers.experimental.preprocessing.Resizing(in_h, in_w, interpolation='bilinear')(x)
 
             concat_list.append(x)
 
@@ -75,7 +79,7 @@ def pyramid_pooling_block(input_tensor, bin_sizes, in_h, in_w, reduce_dims=True)
 
 
 def global_feature_extractor(lds_layer):
-    with keras.backend.name_scope('global_feature_extractor'):
+    with tf.name_scope('global_feature_extractor') as scope:
         gfe_layer = bottleneck_block(lds_layer, 64, (3, 3), t=6, strides=2, n=3)
         gfe_layer = bottleneck_block(gfe_layer, 96, (3, 3), t=6, strides=2, n=3)
         gfe_layer = bottleneck_block(gfe_layer, 128, (3, 3), t=6, strides=1, n=3)
@@ -85,19 +89,22 @@ def global_feature_extractor(lds_layer):
 
 
 def feature_fusion(lds_layer, gfe_layer):
-    with keras.backend.name_scope('feature_fusion'):
-        ff_layer1 = layers.Conv2D(128, (1, 1), padding='same', strides=(1, 1))(lds_layer)
+    with tf.name_scope('feature_fusion') as scope:
+        ff_layer1 = layers.Conv2D(128, (1, 1), padding='same', strides=(1, 1),
+                                  kernel_regularizer=keras.regularizers.L2(l2=0.00004))(lds_layer)
         # ff_layer1 = layers.BatchNormalization()(ff_layer1)
         # ff_layer1 = layers.Activation('relu')(ff_layer1)
 
         # ff_layer2 = layers.UpSampling2D((4, 4), interpolation='bilinear')(gfe_layer)
         scale = (ff_layer1.shape[1] // gfe_layer.shape[1], ff_layer1.shape[2] // gfe_layer.shape[2])
-        ff_layer2 = layers.Lambda(lambda x_in: tf.image.resize(x_in, (ff_layer1.shape[1], ff_layer1.shape[2]),
-                                                               method=tf.image.ResizeMethod.BILINEAR))(gfe_layer)
+        # ff_layer2 = layers.Lambda(lambda x_in: tf.image.resize(x_in, (ff_layer1.shape[1], ff_layer1.shape[2]),
+        #                                                        method=tf.image.ResizeMethod.BILINEAR))(gfe_layer)
+        ff_layer2 = layers.experimental.preprocessing.Resizing(ff_layer1.shape[1], ff_layer1.shape[2], interpolation='bilinear')(gfe_layer)
         ff_layer2 = layers.DepthwiseConv2D((3, 3), strides=1, padding='same', dilation_rate=scale)(ff_layer2)
         ff_layer2 = layers.BatchNormalization()(ff_layer2)
         ff_layer2 = layers.Activation('relu')(ff_layer2)
-        ff_layer2 = layers.Conv2D(128, kernel_size=1, strides=1, padding='same', activation=None)(ff_layer2)
+        ff_layer2 = layers.Conv2D(128, kernel_size=1, strides=1, padding='same', activation=None,
+                                  kernel_regularizer=keras.regularizers.L2(l2=0.00004))(ff_layer2)
 
         ff_final = layers.add([ff_layer1, ff_layer2])
         ff_final = layers.BatchNormalization()(ff_final)
@@ -107,10 +114,11 @@ def feature_fusion(lds_layer, gfe_layer):
 
 
 def classifier_layer(input_tensor, img_size, num_classes, name, resize_input=None):
-    with keras.backend.name_scope(name):
+    with tf.name_scope(name) as scope:
         if resize_input:
-            input_tensor = layers.Lambda(lambda x_in: tf.image.resize(x_in, (resize_input[0], resize_input[1]),
-                                                                      method=tf.image.ResizeMethod.BILINEAR))(input_tensor)
+            # input_tensor = layers.Lambda(lambda x_in: tf.image.resize(x_in, (resize_input[0], resize_input[1]),
+            #                                                           method=tf.image.ResizeMethod.BILINEAR))(input_tensor)
+            input_tensor = layers.experimental.preprocessing.Resizing(resize_input[0], resize_input[1], interpolation='bilinear')(input_tensor)
         classifier = layers.SeparableConv2D(128, (3, 3), padding='same', strides=(1, 1))(input_tensor)
         classifier = layers.BatchNormalization()(classifier)
         classifier = layers.Activation('relu')(classifier)
@@ -119,20 +127,23 @@ def classifier_layer(input_tensor, img_size, num_classes, name, resize_input=Non
         classifier = layers.BatchNormalization()(classifier)
         classifier = layers.Activation('relu')(classifier)
 
-        classifier = layers.Conv2D(num_classes, (1, 1), padding='same', strides=(1, 1))(classifier)
+        classifier = layers.Conv2D(num_classes, (1, 1), padding='same', strides=(1, 1),
+                                   kernel_regularizer=keras.regularizers.L2(l2=0.00004))(classifier)
         classifier = layers.BatchNormalization()(classifier)
         classifier = layers.Activation('relu')(classifier)
 
-        classifier = layers.Lambda(lambda x_in: tf.image.resize(x_in, (img_size[0], img_size[1]),
-                                                                method=tf.image.ResizeMethod.BILINEAR))(classifier)
+        # classifier = layers.Lambda(lambda x_in: tf.image.resize(x_in, (img_size[0], img_size[1]),
+        #                                                         method=tf.image.ResizeMethod.BILINEAR))(classifier)
+        classifier = layers.experimental.preprocessing.Resizing(img_size[0], img_size[1], interpolation='bilinear')(classifier)
         classifier = layers.Dropout(0.3)(classifier)
         classifier = activations.softmax(classifier)
-        classifier = layers.Activation('relu')(classifier)
+        classifier = layers.Activation('relu', name=name)(classifier)
 
     return classifier
 
 
 def generate_model(img_shape, n_classes, ds_aux_weight=0.4, gfe_aux_weight=0.4, print_summary=False):
+    # TODO: Lead params from config yaml file
     h = img_shape[0]
     w = img_shape[1]
 
@@ -155,7 +166,4 @@ def generate_model(img_shape, n_classes, ds_aux_weight=0.4, gfe_aux_weight=0.4, 
     if print_summary:
         fast_scnn.summary()
 
-    optimizer = keras.optimizers.SGD(momentum=0.9, lr=0.045)
-    fast_scnn.compile(loss=loss_dict, loss_weights=loss_weights, optimizer=optimizer, metrics=['accuracy'])
-
-    return fast_scnn
+    return fast_scnn, loss_dict, loss_weights
